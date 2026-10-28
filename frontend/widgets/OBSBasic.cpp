@@ -24,6 +24,7 @@
 #include "OBSBasicControls.hpp"
 #include "OBSBasicStats.hpp"
 #include "plugin-manager/PluginManager.hpp"
+#include "test/TestWindow.hpp"
 
 #include <obs-module.h>
 
@@ -2098,4 +2099,13 @@ OBSPromptResult OBSBasic::PromptForName(const OBSPromptRequest &request, const O
 void OBSBasic::on_actionOpenPluginManager_triggered()
 {
 	App()->pluginManagerOpenDialog();
+}
+
+void OBSBasic::on_actionOpenTest_triggered()
+{
+	auto *testWindow = new OBS::TestWindow(this);
+
+	connect(testWindow, &QDialog::finished, testWindow, &QObject::deleteLater);
+	testWindow->setModal(true);
+	testWindow->show();
 }

@@ -791,6 +791,7 @@ private slots:
 
 private slots:
 	void on_actionOpenPluginManager_triggered();
+	void on_actionOpenTest_triggered();
 
 	/* -------------------------------------
 	 * MARK: - OBSBasic_Preview
