@@ -20,6 +20,8 @@
 #include <QDialog>
 
 class QVBoxLayout;
+class QLabel;
+class QPushButton;
 
 namespace OBS {
 
@@ -32,7 +34,11 @@ public:
 	QVBoxLayout *operationsLayout() const { return operationsLayout_; }
 
 private:
+	void captureMinidump();
+
 	QVBoxLayout *operationsLayout_ = nullptr;
+	QLabel *minidumpResultLabel_ = nullptr;
+	QPushButton *captureMinidumpButton_ = nullptr;
 };
 
 } // namespace OBS

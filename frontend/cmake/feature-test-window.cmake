@@ -3,4 +3,6 @@ target_sources(
   PRIVATE
     test/TestWindow.cpp
     test/TestWindow.hpp
+    utility/Minidump.cpp
+    utility/Minidump.hpp
 )
