@@ -11,7 +11,8 @@ param(
     [string] $BuildDirectory,
     [string] $OutputDirectory = 'artifacts',
     [string] $CMake = 'cmake.exe',
-    [string] $Generator = 'Visual Studio 18 2026'
+    [string] $Generator = 'Visual Studio 18 2026',
+    [string] $WindowsTargetPlatformVersion = '10.0.26100.0'
 )
 
 $ErrorActionPreference = 'Stop'
@@ -54,6 +55,7 @@ $PackageDirectory = Join-Path $ArchiveDirectory 'packages'
 $SymbolsDirectory = Join-Path $ArchiveDirectory 'symbols'
 $MetadataPath = Join-Path $ArchiveDirectory 'build-info.txt'
 $Platform = if ($Target -eq 'x64') { 'x64' } else { 'ARM64' }
+$GeneratorPlatform = "$Platform,version=$WindowsTargetPlatformVersion"
 
 New-Item -ItemType Directory -Force $ArchiveDirectory, $InstallDirectory, $PackageDirectory, $SymbolsDirectory |
     Out-Null
@@ -62,7 +64,7 @@ $ConfigureArguments = @(
     '-S', $ProjectRoot,
     '-B', $BuildDirectory,
     '-G', $Generator,
-    '-A', $Platform,
+    '-A', $GeneratorPlatform,
     "-DOBS_VERSION_OVERRIDE=$Version",
     "-DOBS_BUILD_NUMBER=$BuildNumber"
 )
