@@ -477,6 +477,55 @@ static inline void write_module_list(struct exception_handler_data *data)
 	dstr_cat_dstr(&data->str, &data->module_list);
 }
 
+static inline void write_minidump(struct exception_handler_data *data)
+{
+	char *crash_directory = os_get_config_path_ptr("obs-studio/crashes");
+	if (!crash_directory)
+		return;
+
+	if (os_mkdirs(crash_directory) == MKDIR_ERROR) {
+		bfree(crash_directory);
+		return;
+	}
+
+	SYSTEMTIME time_info;
+	GetLocalTime(&time_info);
+
+	struct dstr dump_path;
+	dstr_init_copy(&dump_path, crash_directory);
+	dstr_catf(&dump_path, "/obs-minidump-%04u%02u%02u-%02u%02u%02u-%03u-%lu.dmp",
+		  time_info.wYear, time_info.wMonth, time_info.wDay, time_info.wHour, time_info.wMinute,
+		  time_info.wSecond, time_info.wMilliseconds, GetCurrentProcessId());
+
+	wchar_t *dump_path_wide = NULL;
+	if (!os_utf8_to_wcs_ptr(dump_path.array, 0, &dump_path_wide)) {
+		dstr_free(&dump_path);
+		bfree(crash_directory);
+		return;
+	}
+
+	HANDLE dump_file = CreateFileW(dump_path_wide, GENERIC_WRITE, FILE_SHARE_READ, NULL, CREATE_ALWAYS,
+					      FILE_ATTRIBUTE_NORMAL, NULL);
+	if (dump_file != INVALID_HANDLE_VALUE) {
+		MINIDUMP_EXCEPTION_INFORMATION exception_info = {
+			.ThreadId = GetCurrentThreadId(),
+			.ExceptionPointers = data->exception,
+			.ClientPointers = FALSE,
+		};
+		const MINIDUMP_TYPE dump_type = (MINIDUMP_TYPE)(MiniDumpWithUnloadedModules |
+									MiniDumpWithProcessThreadData | MiniDumpWithFullMemoryInfo |
+									MiniDumpWithThreadInfo);
+
+		data->minidump_write_dump(data->process, GetCurrentProcessId(), dump_file, dump_type, &exception_info,
+						  NULL, NULL);
+		CloseHandle(dump_file);
+	}
+
+	bfree(dump_path_wide);
+	dstr_free(&dump_path);
+	bfree(crash_directory);
+}
+
 /* ------------------------------------------------------------------------- */
 
 static inline void handle_exception(struct exception_handler_data *data, PEXCEPTION_POINTERS exception)
@@ -486,6 +535,7 @@ static inline void handle_exception(struct exception_handler_data *data, PEXCEPT
 
 	data->exception = exception;
 	data->process = GetCurrentProcess();
+	write_minidump(data);
 	data->main_trace.context = *exception->ContextRecord;
 	GetSystemTime(&data->time_info);
 
@@ -503,22 +553,21 @@ static inline void handle_exception(struct exception_handler_data *data, PEXCEPT
 static LONG CALLBACK exception_handler(PEXCEPTION_POINTERS exception)
 {
 	struct exception_handler_data data = {0};
-	static bool inside_handler = false;
+	static volatile LONG inside_handler = 0;
 
 	/* don't use if a debugger is present */
 	if (IsDebuggerPresent())
 		return EXCEPTION_CONTINUE_SEARCH;
 
-	if (inside_handler)
+	/* Serialize concurrent or recursive crashes without locking normal execution. */
+	if (InterlockedCompareExchange(&inside_handler, 1, 0) != 0)
 		return EXCEPTION_CONTINUE_SEARCH;
-
-	inside_handler = true;
 
 	handle_exception(&data, exception);
 	bcrash("%s", data.str.array);
 	exception_handler_data_free(&data);
 
-	inside_handler = false;
+	InterlockedExchange(&inside_handler, 0);
 
 	return EXCEPTION_CONTINUE_SEARCH;
 }
