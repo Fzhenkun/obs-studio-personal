@@ -51,6 +51,10 @@ TestWindow::TestWindow(QWidget *parent) : QDialog(parent)
 	connect(captureMinidumpButton_, &QPushButton::clicked, this, &TestWindow::captureMinidump);
 	operationsLayout_->addWidget(captureMinidumpButton_);
 
+	simulateCrashButton_ = new QPushButton(QTStr("TestWindow.SimulateCrash"), this);
+	connect(simulateCrashButton_, &QPushButton::clicked, this, &TestWindow::simulateCrash);
+	operationsLayout_->addWidget(simulateCrashButton_);
+
 	minidumpResultLabel_ = new QLabel(this);
 	minidumpResultLabel_->setWordWrap(true);
 	operationsLayout_->addWidget(minidumpResultLabel_);
@@ -98,6 +102,12 @@ void TestWindow::captureMinidump()
 					      .arg(QString::number(result.errorCode)));
 		break;
 	}
+}
+
+void TestWindow::simulateCrash()
+{
+	volatile int *nullPointer = nullptr;
+	*nullPointer = 0;
 }
 
 } // namespace OBS
