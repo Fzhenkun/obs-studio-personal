@@ -28,7 +28,10 @@
 #include <QPushButton>
 #include <QVBoxLayout>
 
+#include <cstdint>
+#include <chrono>
 #include <filesystem>
+#include <thread>
 
 #include "moc_TestWindow.cpp"
 
@@ -54,6 +57,10 @@ TestWindow::TestWindow(QWidget *parent) : QDialog(parent)
 	simulateCrashButton_ = new QPushButton(QTStr("TestWindow.SimulateCrash"), this);
 	connect(simulateCrashButton_, &QPushButton::clicked, this, &TestWindow::simulateCrash);
 	operationsLayout_->addWidget(simulateCrashButton_);
+
+	simulateUIHangButton_ = new QPushButton(QTStr("TestWindow.SimulateUIHang"), this);
+	connect(simulateUIHangButton_, &QPushButton::clicked, this, &TestWindow::simulateUIHang);
+	operationsLayout_->addWidget(simulateUIHangButton_);
 
 	minidumpResultLabel_ = new QLabel(this);
 	minidumpResultLabel_->setWordWrap(true);
@@ -108,6 +115,12 @@ void TestWindow::simulateCrash()
 {
 	volatile int *nullPointer = nullptr;
 	*nullPointer = 0;
+}
+
+void TestWindow::simulateUIHang()
+{
+	const uint64_t threshold = config_get_uint(App()->GetAppConfig(), "Diagnostics", "UIHangThresholdMs");
+	std::this_thread::sleep_for(std::chrono::milliseconds(threshold + 1000));
 }
 
 } // namespace OBS

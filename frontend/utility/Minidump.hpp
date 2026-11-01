@@ -18,6 +18,7 @@
 #pragma once
 
 #include <filesystem>
+#include <cstdint>
 
 namespace OBS {
 
@@ -29,5 +30,6 @@ struct MinidumpResult {
 };
 
 MinidumpResult CaptureCurrentProcessMinidump(const std::filesystem::path &path);
+MinidumpResult CaptureThreadMinidump(const std::filesystem::path &path, uint64_t nativeThreadId);
 
 } // namespace OBS

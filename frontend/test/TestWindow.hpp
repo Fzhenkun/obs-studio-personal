@@ -36,11 +36,13 @@ public:
 private:
 	void captureMinidump();
 	void simulateCrash();
+	void simulateUIHang();
 
 	QVBoxLayout *operationsLayout_ = nullptr;
 	QLabel *minidumpResultLabel_ = nullptr;
 	QPushButton *captureMinidumpButton_ = nullptr;
 	QPushButton *simulateCrashButton_ = nullptr;
+	QPushButton *simulateUIHangButton_ = nullptr;
 };
 
 } // namespace OBS

@@ -20,6 +20,7 @@
 #include <utility/NativeEventFilter.hpp>
 #include <utility/OBSTheme.hpp>
 #include <utility/ThumbnailManager.hpp>
+#include <utility/ThreadHangMonitor.hpp>
 #include <widgets/OBSMainWindow.hpp>
 
 #include <obs-frontend-api.h>
@@ -35,6 +36,7 @@
 #include <QUuid>
 
 #include <array>
+#include <chrono>
 #include <deque>
 #include <functional>
 #include <string>
@@ -46,6 +48,7 @@ Q_DECLARE_METATYPE(VoidFunc)
 
 class QFileSystemWatcher;
 class QSocketNotifier;
+class QTimer;
 
 namespace OBS {
 class CrashHandler;
@@ -71,6 +74,9 @@ class OBSApp : public QApplication {
 private:
 	QUuid appLaunchUUID_;
 	std::unique_ptr<OBS::CrashHandler> crashHandler_;
+	std::unique_ptr<OBS::ThreadHangMonitor> hangMonitor_;
+	QPointer<QTimer> uiHeartbeatTimer_;
+	OBS::ThreadHangMonitor::Heartbeat uiHeartbeat_;
 
 	std::string locale;
 
@@ -122,6 +128,7 @@ private:
 	void FindThemes();
 
 	bool notify(QObject *receiver, QEvent *e) override;
+	void captureThreadHang(const OBS::ThreadHeartbeat &heartbeat, std::chrono::milliseconds elapsed);
 
 #ifndef _WIN32
 	static std::array<int, 2> sigIntFileDescriptor;

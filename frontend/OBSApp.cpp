@@ -21,6 +21,7 @@
 #include <dialogs/LogUploadDialog.hpp>
 #include <plugin-manager/PluginManager.hpp>
 #include <utility/CrashHandler.hpp>
+#include <utility/Minidump.hpp>
 #include <utility/OBSEventFilter.hpp>
 #include <utility/OBSProxyStyle.hpp>
 #if defined(_WIN32) || defined(ENABLE_SPARKLE_UPDATER)
@@ -40,11 +41,16 @@
 #endif
 
 #include <QSessionManager>
+#include <QTimer>
 #ifndef _WIN32
 #include <QSocketNotifier>
 #endif
 
+#include <algorithm>
+#include <cctype>
 #include <chrono>
+#include <filesystem>
+#include <limits>
 #include <sstream>
 
 #ifdef _WIN32
@@ -327,6 +333,8 @@ bool OBSApp::InitGlobalConfigDefaults()
 	config_set_default_int(appConfig, "General", "InfoIncrement", -1);
 	config_set_default_string(appConfig, "General", "ProcessPriority", "Normal");
 	config_set_default_bool(appConfig, "General", "EnableAutoUpdates", true);
+	config_set_default_uint(appConfig, "Diagnostics", "UIHangThresholdMs", 5000);
+	config_set_default_uint(appConfig, "Diagnostics", "UIHangCheckIntervalMs", 500);
 
 #if _WIN32
 	config_set_default_string(appConfig, "Video", "Renderer", "Direct3D 11");
@@ -1012,6 +1020,7 @@ OBSApp::OBSApp(int &argc, char **argv, profiler_name_store_t *store)
 
 OBSApp::~OBSApp()
 {
+	hangMonitor_.reset();
 	if (libobs_initialized) {
 		applicationShutdown();
 	}
@@ -1349,6 +1358,25 @@ bool OBSApp::OBSInit()
 	mainWindow->setAttribute(Qt::WA_DeleteOnClose, true);
 
 	mainWindow->OBSInit();
+
+	const auto checkIntervalValue =
+		std::clamp(config_get_uint(appConfig, "Diagnostics", "UIHangCheckIntervalMs"), uint64_t{1},
+			   static_cast<uint64_t>(std::numeric_limits<int>::max()));
+	const auto hangThresholdValue = std::max(
+		config_get_uint(appConfig, "Diagnostics", "UIHangThresholdMs"), checkIntervalValue);
+	const auto hangThreshold = std::chrono::milliseconds(hangThresholdValue);
+	const auto checkInterval = std::chrono::milliseconds(checkIntervalValue);
+	hangMonitor_ = std::make_unique<OBS::ThreadHangMonitor>(
+		OBS::ThreadHangMonitor::Config{checkInterval, hangThreshold},
+		[this](const OBS::ThreadHeartbeat &heartbeat, std::chrono::milliseconds elapsed) {
+			captureThreadHang(heartbeat, elapsed);
+		});
+	uiHeartbeat_ = hangMonitor_->registerThread("ui");
+	uiHeartbeatTimer_ = new QTimer(this);
+	uiHeartbeatTimer_->setInterval(static_cast<int>(checkInterval.count()));
+	connect(uiHeartbeatTimer_, &QTimer::timeout, this, [this] { OBS::ThreadHangMonitor::beat(uiHeartbeat_); });
+	uiHeartbeatTimer_->start();
+	hangMonitor_->start();
 
 	connect(OBSBasic::Get(), &OBSBasic::mainWindowClosed, crashHandler_.get(),
 		&OBS::CrashHandler::applicationShutdownHandler);
@@ -2035,6 +2063,10 @@ void OBSApp::commitData(QSessionManager &manager)
 
 void OBSApp::applicationShutdown() noexcept
 {
+	hangMonitor_.reset();
+	uiHeartbeat_.reset();
+	uiHeartbeatTimer_ = nullptr;
+
 #ifdef _WIN32
 	bool disableAudioDucking = config_get_bool(appConfig, "Audio", "DisableAudioDucking");
 	if (disableAudioDucking) {
@@ -2070,6 +2102,41 @@ void OBSApp::applicationShutdown() noexcept
 	if (libobs_initialized) {
 		obs_shutdown();
 		libobs_initialized = false;
+	}
+}
+
+void OBSApp::captureThreadHang(const OBS::ThreadHeartbeat &heartbeat, std::chrono::milliseconds elapsed)
+{
+	blog(LOG_ERROR, "Thread '%s' has not updated its heartbeat for %lld ms", heartbeat.name.c_str(),
+	     static_cast<long long>(elapsed.count()));
+
+	BPtr<char> jankDirectoryPath(GetAppConfigPathPtr("obs-studio/janks"));
+	if (!jankDirectoryPath) {
+		blog(LOG_ERROR, "Unable to prepare jank directory for minidump");
+		return;
+	}
+
+	const std::filesystem::path jankDirectory = std::filesystem::u8path(jankDirectoryPath.Get());
+	std::error_code error;
+	std::filesystem::create_directories(jankDirectory, error);
+	if (error) {
+		blog(LOG_ERROR, "Unable to create jank directory for minidump: %s", error.message().c_str());
+		return;
+	}
+
+	std::string safeThreadName = heartbeat.name;
+	std::replace_if(safeThreadName.begin(), safeThreadName.end(),
+				[](char character) { return !std::isalnum(static_cast<unsigned char>(character)) && character != '-'; },
+				'_');
+	const std::filesystem::path dumpPath = jankDirectory /
+		std::filesystem::u8path("obs-jank-" + safeThreadName + "-" + GenerateTimeDateFilename("dmp", true));
+
+	const OBS::MinidumpResult result = OBS::CaptureThreadMinidump(dumpPath, heartbeat.nativeThreadId);
+	if (result.status == OBS::MinidumpStatus::Success) {
+		blog(LOG_ERROR, "Captured UI hang minidump: %s", dumpPath.u8string().c_str());
+	} else {
+		blog(LOG_ERROR, "Failed to capture UI hang minidump (status %d, error %lu)", static_cast<int>(result.status),
+		     result.errorCode);
 	}
 }
 

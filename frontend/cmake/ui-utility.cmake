@@ -65,6 +65,8 @@ target_sources(
     utility/ThumbnailManager.hpp
     utility/ThumbnailView.cpp
     utility/ThumbnailView.hpp
+    utility/ThreadHangMonitor.cpp
+    utility/ThreadHangMonitor.hpp
     utility/VCamConfig.hpp
     utility/audio-encoders.cpp
     utility/audio-encoders.hpp
